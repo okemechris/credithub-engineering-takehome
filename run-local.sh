@@ -10,7 +10,7 @@ if [ ! -x .venv/bin/python ]; then
 fi
 .venv/bin/pip install -q -r requirements.txt
 .venv/bin/python -m app.seed
-.venv/bin/uvicorn app.main:app --port 8000 &
+.venv/bin/uvicorn app.main:app --port 8137 &
 BACKEND_PID=$!
 trap 'kill $BACKEND_PID 2>/dev/null || true' EXIT
 

@@ -6,8 +6,8 @@ once the backend is running; the **repayment UI is your task** (see the TODOs in
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173  (proxies /loans, /health to :8000)
+npm run dev          # http://localhost:5137  (proxies /loans, /health to :8137)
 ```
 
-The Vite dev server proxies API calls to the backend on `:8000`, so there's no
+The Vite dev server proxies API calls to the backend on `:8137`, so there's no
 CORS to configure. Start the backend first (see the root `README.md`).

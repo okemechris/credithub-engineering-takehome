@@ -18,9 +18,9 @@ your judgment about the code that comes out. (See `NOTES.md` below.)
 
 You need **Python 3.11+** and **Node 18+**.
 
-**One command** (seeds the DB, starts API on `:8000`, frontend on `:5173`):
+**One command** (seeds the DB, starts API on `:8137`, frontend on `:5137`):
 ```bash
-./run-local.sh          # then open http://localhost:5173
+./run-local.sh          # then open http://localhost:5137
 ```
 
 **Or two terminals:**
@@ -29,13 +29,16 @@ You need **Python 3.11+** and **Node 18+**.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m app.seed
-uvicorn app.main:app --reload          # http://localhost:8000/docs
+uvicorn app.main:app --reload --port 8137     # http://localhost:8137/docs
 
 # terminal 2 — frontend
 cd frontend
 npm install
-npm run dev                            # http://localhost:5173
+npm run dev                                    # http://localhost:5137
 ```
+
+*(Non-standard ports on purpose — 8000/5173 often clash with other projects. The
+frontend proxies to :8137, so keep the API on that port.)*
 
 **Tests (backend):**
 ```bash
