@@ -3,6 +3,10 @@
 Kept intentionally close to the real platform's shape — including the fact
 that money is stored as ``Float``. Treat this as the production schema you've
 inherited.
+
+Flow: payments arrive as ``PaymentEvent`` rows (simulated gateway callbacks) in
+``pending`` status. Reconciling them — matching to a loan, applying the money,
+and ticking the event off — is the candidate's task.
 """
 
 import enum
@@ -25,6 +29,12 @@ class LoanStatus(str, enum.Enum):
     written_off = "written_off"
 
 
+class PaymentStatus(str, enum.Enum):
+    pending = "pending"    # landed, not yet reconciled
+    applied = "applied"    # ticked off against a loan
+    rejected = "rejected"  # could not be applied (bad loan state, duplicate, …)
+
+
 class Loan(Base):
     __tablename__ = "loans"
 
@@ -38,22 +48,43 @@ class Loan(Base):
     status = Column(Enum(LoanStatus), nullable=False, default=LoanStatus.active)
     disbursed_at = Column(DateTime, default=_utcnow)
 
-    repayments = relationship("Repayment", back_populates="loan")
-
     @property
     def outstanding(self) -> float:
         return self.total_repayable - self.total_paid
 
 
+class PaymentEvent(Base):
+    """An incoming payment from a rail (gateway/GSI/CBS). Starts ``pending``.
+
+    ``external_ref`` is the rail's own id for the payment — the idempotency key.
+    It is intentionally NOT unique at the DB level: real rails redeliver, so the
+    same ``external_ref`` can arrive more than once, and de-duplicating is part
+    of the task.
+    """
+
+    __tablename__ = "payment_events"
+
+    id = Column(Integer, primary_key=True)
+    external_ref = Column(String, nullable=False)  # rail's payment id (idempotency key)
+    loan_id = Column(Integer, ForeignKey("loans.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    channel = Column(String, nullable=False, default="paystack")
+    status = Column(Enum(PaymentStatus), nullable=False, default=PaymentStatus.pending)
+    reason = Column(String, nullable=True)  # why it was rejected, if it was
+    received_at = Column(DateTime, default=_utcnow)
+    processed_at = Column(DateTime, nullable=True)
+
+
 class Repayment(Base):
+    """Ledger row created when a payment event is applied to a loan."""
+
     __tablename__ = "repayments"
 
     id = Column(Integer, primary_key=True)
     loan_id = Column(Integer, ForeignKey("loans.id"), nullable=False)
+    payment_event_id = Column(Integer, ForeignKey("payment_events.id"), nullable=True)
     amount = Column(Float, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
-
-    loan = relationship("Loan", back_populates="repayments")
 
 
 class AuditLog(Base):

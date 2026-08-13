@@ -9,6 +9,8 @@ export default defineConfig({
     port: 5137,
     proxy: {
       "/loans": "http://localhost:8137",
+      "/payment-events": "http://localhost:8137",
+      "/simulate": "http://localhost:8137",
       "/health": "http://localhost:8137",
     },
   },
