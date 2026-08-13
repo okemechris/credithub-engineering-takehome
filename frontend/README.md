@@ -1,10 +1,12 @@
 # Frontend (React + Vite)
 
-This screen is **entirely provided** — you don't have to change it (polish it if
-you like). It fires payments at the backend webhook and shows the feed + live
-loan balances. Once you build `POST /webhooks/payments`, **"Simulate incoming
-payment"** shows payments getting applied/rejected and the balances updating;
-**"Resend ↻"** re-fires an existing payment (a rail redelivery).
+The base screen is **provided** — a payments feed + live loan balances. It fires
+payments at the backend webhook and reflects the results; **"Simulate incoming
+payment"** sends a new payment and **"Resend ↻"** re-fires an existing one (a rail
+redelivery). You don't need to change it for the core task (the backend webhook).
+
+As a **frontend extension**, build an **admin reconciliation & issues panel** on
+top of this — see *Your task* in the root `README.md`.
 
 ```bash
 npm install

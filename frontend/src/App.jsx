@@ -190,13 +190,15 @@ export default function App() {
       </div>
 
       <div className="todo">
-        <h3>Your task is the backend</h3>
-        This screen is provided. Build <code>POST /webhooks/payments</code> so an
-        incoming payment is reconciled <b>on receipt</b> — recorded, matched to its
-        loan, applied (or rejected), the loan closed when fully repaid, audited, in
-        one transaction. Handle a rail <b>redelivery</b> (the <b>Resend&nbsp;↻</b>
-        button re-fires the same reference — it must not apply twice), a payment for
-        a closed loan, and overpayment. Then this feed and the balances update live.
+        <h3>Your task</h3>
+        This screen is provided. <b>Core:</b> build{" "}
+        <code>POST /webhooks/payments</code> so an incoming payment is reconciled{" "}
+        <b>on receipt</b> — recorded, matched to its loan, applied (or rejected),
+        the loan closed when fully repaid, audited, in one transaction. Handle a
+        rail <b>redelivery</b> (the <b>Resend&nbsp;↻</b> button re-fires the same
+        reference — it must not apply twice), a payment for a closed loan, and
+        overpayment. <b>Extension:</b> build an <b>admin reconciliation &amp; issues
+        panel</b> that showcases what reconciled and the issues needing attention.
         See <code>README.md</code>.
       </div>
     </div>

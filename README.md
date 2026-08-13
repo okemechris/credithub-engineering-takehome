@@ -52,10 +52,10 @@ frontend proxies to :8137, so keep the API on that port.)*
   `test_payments.py` **fails** against the stub.
 
 **Frontend** (`frontend/`)
-- React + Vite — **entirely provided.** It fires payments at your webhook and
-  shows the feed + live balances. You don't have to touch it (polish it if you
-  like); the task is the backend. `Simulate` sends a new payment; `Resend ↻`
-  re-fires an existing one (a rail redelivery).
+- React + Vite. The base screen — feed + live balances — is **provided**
+  (`Simulate` sends a payment; `Resend ↻` re-fires one, a rail redelivery). The
+  core task is the backend; building an **admin reconciliation & issues panel** is
+  a frontend extension (see *Your task*).
 
 ---
 
@@ -75,13 +75,20 @@ Reconcile it **on receipt**. Contract:
     applied twice must only count once.
 - Decide and document how you treat **overpayment**.
 
-### Extension (expected in a strong submission)
-Make it correct under **concurrent** deliveries of the same payment (two webhooks
-racing on one `external_ref` / loan).
+### Extensions (expected in a strong submission)
+- **Admin reconciliation & issues panel (frontend).** The provided feed shows raw
+  events; build an admin-facing view that gives an operator the *operational
+  picture*: what reconciled successfully, and — front and centre — the **issues
+  that need attention** (rejected payments and *why*: duplicates, closed loans,
+  overpayments), plus summary health (applied vs rejected, total reconciled,
+  failure rate). Think about how you'd surface exceptions so an admin can act.
+  Build on `GET /payment-events`; you may add a `GET /audit-log` endpoint for a
+  richer activity trail. We're looking at your product judgment as much as the code.
+- **Concurrency (backend).** Make reconciliation correct under two webhooks racing
+  on the same `external_ref` / loan.
 
 ### Optional
-Anything on the frontend you'd improve, or a real signature check instead of a
-shared token.
+A real provider **signature** check instead of the shared token.
 
 ---
 
