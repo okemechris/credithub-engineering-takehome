@@ -10,7 +10,7 @@ export default defineConfig({
     proxy: {
       "/loans": "http://localhost:8137",
       "/payment-events": "http://localhost:8137",
-      "/simulate": "http://localhost:8137",
+      "/webhooks": "http://localhost:8137",
       "/health": "http://localhost:8137",
     },
   },

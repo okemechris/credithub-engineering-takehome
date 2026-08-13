@@ -85,6 +85,7 @@ tbody tr:hover { background: var(--surface-2); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .banner { background: var(--red-bg); color: var(--red); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 14px; margin-bottom: 18px; }
+.banner.note { background: var(--accent-weak); color: var(--accent); }
 .muted { color: var(--muted); }
 
 .skeleton { height: 14px; border-radius: 6px; background: linear-gradient(90deg, var(--surface-2), var(--border), var(--surface-2)); background-size: 200% 100%; animation: sh 1.2s infinite; }

@@ -1,9 +1,10 @@
 # Frontend (React + Vite)
 
-Small UI on top of the servicing API. The loans table, the payments feed, and
-the **"Simulate incoming payment"** button all work once the backend is running;
-**wiring the Apply (reconcile) action is your task** — see the TODOs in
-`src/App.jsx`.
+This screen is **entirely provided** — you don't have to change it (polish it if
+you like). It fires payments at the backend webhook and shows the feed + live
+loan balances. Once you build `POST /webhooks/payments`, **"Simulate incoming
+payment"** shows payments getting applied/rejected and the balances updating;
+**"Resend ↻"** re-fires an existing payment (a rail redelivery).
 
 ```bash
 npm install

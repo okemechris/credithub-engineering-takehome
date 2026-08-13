@@ -1,14 +1,14 @@
-# CreditHub — Engineering Take-Home: Payment Reconciliation (Full-Stack)
+# CreditHub — Engineering Take-Home: Payment Webhook
 
 Welcome, and thanks for taking the time. This is a small, self-contained slice
 of a lending platform — a **FastAPI + SQLAlchemy** backend and a **React + Vite**
 frontend.
 
 In the real world, loan repayments aren't typed in by hand — they **arrive from
-rails** (payment gateways, NIBSS GSI, core-banking postings) as events, and the
-platform **reconciles** each one against a loan. This exercise models exactly
-that: a payment lands (we simulate it), and your job is to **reconcile it — "tick
-it off" against the loan — and reflect it in the UI.**
+rails** (payment gateways, NIBSS GSI, core-banking postings) as webhook events,
+and the platform **reconciles** each one against a loan as it lands. Your task is
+that webhook: **a payment arrives, and you reconcile it — record it, match it to
+its loan, apply it, and close the loan when it's fully repaid — on receipt.**
 
 **Timebox:** ~1–2 days. Ship what you'd be comfortable putting in front of a
 bank, and be explicit about anything you'd do differently with more time.
@@ -31,59 +31,57 @@ Or two terminals — see the commands at the bottom. Tests: `pytest`.
 *(Non-standard ports on purpose — 8000/5173 often clash with other projects. The
 frontend proxies to :8137, so keep the API on that port.)*
 
-## The loop
+## The flow
 
-1. A payment lands → a `PaymentEvent` row in **`pending`** status (we provide a
-   **"Simulate incoming payment"** button — a fake gateway callback).
-2. **You reconcile it:** match it to its loan, apply the money, and **tick the
-   event off** (`pending → applied`).
-3. The UI reflects the new balance and the event's status.
+1. A payment lands → the gateway POSTs it to **`/webhooks/payments`**. The
+   frontend's **"Simulate incoming payment"** button fires a synthetic one.
+2. **You reconcile it on receipt:** record it, match it to its loan, apply the
+   money (or reject it), and close the loan when fully repaid.
+3. The feed and the loan balances update live in the UI — no extra step.
 
 ## What's here
 
 **Backend** (`app/`)
 - `models.py` — `Loan`, `PaymentEvent`, `Repayment`, `AuditLog`.
 - `loans.py` — read endpoints (provided).
-- `payments.py` — **provided:** `GET /payment-events` (the feed) and
-  `POST /simulate/payment` (drop a pending event). **Your task:** the
-  `POST /payment-events/{id}/apply` stub.
+- `payments.py` — **provided:** `GET /payment-events` (the feed). **Your task:**
+  the `POST /webhooks/payments` stub.
 - `audit.py` — audit helper (writes into the caller's transaction).
-- `auth.py` — role gate via the `X-Role` header.
-- `tests/` — `test_loans.py` + the feed/simulate tests pass; the reconciliation
-  spec in `test_payments.py` **fails** against the stub.
+- `auth.py` — `require_webhook_token` (the `X-Webhook-Token` header).
+- `tests/` — `test_loans.py` + the feed test pass; the webhook spec in
+  `test_payments.py` **fails** against the stub.
 
 **Frontend** (`frontend/`)
-- React + Vite. Loans table, payments feed, and the Simulate button all work.
-  Wiring **Apply** (reconcile) is your task — see the TODO in `src/App.jsx`.
+- React + Vite — **entirely provided.** It fires payments at your webhook and
+  shows the feed + live balances. You don't have to touch it (polish it if you
+  like); the task is the backend. `Simulate` sends a new payment; `Resend ↻`
+  re-fires an existing one (a rail redelivery).
 
 ---
 
-## Your task
+## Your task — `POST /webhooks/payments`
 
-### Backend — `POST /payment-events/{id}/apply` (required)
-Reconcile one pending payment. Contract:
+A payment just arrived from a rail. Body: `{external_ref, loan_id, amount, channel?}`.
+Reconcile it **on receipt**. Contract:
 
-- **`403`** if the caller's role may not reconcile; **`404`** if the event doesn't exist.
-- **Apply** a valid pending event: record a `Repayment`, reduce the loan's
-  outstanding, **close the loan** (`paid_off`) when fully repaid, set the event to
-  **`applied`** with `processed_at`, and write an **audit** record — all in **one
-  transaction**. Return `200 {event, loan}`.
-- **Idempotent:** applying an already-applied event does **not** apply it again.
-- **Reject** (set the event to `rejected` with a `reason`, return `200`) when it
-  can't be applied — the loan isn't `active`, or the payment is a **duplicate**
-  (its `external_ref` was already applied — rails redeliver).
+- **`401`** without a valid `X-Webhook-Token` (see `auth.py`).
+- **Record** every incoming payment as a `PaymentEvent`, then either:
+  - **Apply** it: record a `Repayment`, reduce the loan's outstanding, **close the
+    loan** (`paid_off`) when fully repaid, mark the event **`applied`**, and write
+    an **audit** record — all in **one transaction**. Return `200 {event, loan}`.
+  - **Reject** it (event **`rejected`** with a `reason`, still `200`) when it can't
+    be applied: the loan is unknown or not `active`, the amount **overpays**, or the
+    payment is a **duplicate** — a rail redelivers, so the same `external_ref`
+    applied twice must only count once.
 - Decide and document how you treat **overpayment**.
 
-### Frontend — required
-Wire the **Apply** button so reconciling a payment updates the loan balance and
-the event status on screen, and surface the `403 / 404` cases with a readable
-message. Match the bar of the rest of the UI.
-
 ### Extension (expected in a strong submission)
-A **"Reconcile all pending"** action (batch), or auto-reconcile on receipt.
+Make it correct under **concurrent** deliveries of the same payment (two webhooks
+racing on one `external_ref` / loan).
 
-### Optional stretch (only if you have time)
-Make reconciliation correct under **concurrent** applies of the same event / loan.
+### Optional
+Anything on the frontend you'd improve, or a real signature check instead of a
+shared token.
 
 ---
 

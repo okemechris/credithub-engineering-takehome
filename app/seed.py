@@ -1,6 +1,10 @@
-"""Seed synthetic loans + a few pending payment events.
+"""Seed synthetic loans + a little payment history.
 
 Run once before starting the app:  python -m app.seed
+
+The seeded events are already reconciled (applied/rejected) — they're history,
+so the feed isn't empty on first load. New payments arrive via the webhook (the
+"Simulate incoming payment" button).
 """
 
 from .db import Base, SessionLocal, engine
@@ -19,22 +23,20 @@ def seed() -> None:
         Loan(id=3, borrower_name="Chidi Nwosu", principal=200000, total_repayable=224000, total_paid=224000, status=LoanStatus.paid_off),
         Loan(id=4, borrower_name="Fatima Bello", principal=75000, total_repayable=84000, total_paid=0, status=LoanStatus.cancelled),
         Loan(id=5, borrower_name="Emeka Obi", principal=300000, total_repayable=339000, total_paid=100000, status=LoanStatus.written_off),
-        # Non-round amount — an exact-payoff event is a good money-handling check.
         Loan(id=6, borrower_name="Ngozi Eze", principal=33333, total_repayable=37333.33, total_paid=0, status=LoanStatus.active),
     ]
     db.add_all(loans)
 
-    # Pending payments waiting to be reconciled. A couple are "interesting".
+    # History — already reconciled (consistent with the loan balances above).
     events = [
-        PaymentEvent(external_ref="PSK-9001", loan_id=1, amount=20000, channel="paystack"),   # normal partial
-        PaymentEvent(external_ref="PSK-9002", loan_id=6, amount=37333.33, channel="paystack"), # exact payoff (float)
-        PaymentEvent(external_ref="PSK-9003", loan_id=4, amount=5000, channel="gsi"),          # loan is cancelled
-        PaymentEvent(external_ref="PSK-9001", loan_id=1, amount=20000, channel="paystack"),    # DUPLICATE of the first (redelivery)
-        PaymentEvent(external_ref="PSK-9004", loan_id=2, amount=999999, channel="cbs"),        # overpayment
+        PaymentEvent(external_ref="PSK-8001", loan_id=2, amount=28000, channel="paystack", status=PaymentStatus.applied),
+        PaymentEvent(external_ref="PSK-8002", loan_id=3, amount=224000, channel="gsi", status=PaymentStatus.applied),
+        PaymentEvent(external_ref="PSK-8003", loan_id=4, amount=5000, channel="cbs",
+                     status=PaymentStatus.rejected, reason="loan is cancelled, not active"),
     ]
     db.add_all(events)
     db.commit()
-    print(f"seeded {len(loans)} loans and {len(events)} pending payment events")
+    print(f"seeded {len(loans)} loans and {len(events)} historical payment events")
     db.close()
 
 

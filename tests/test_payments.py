@@ -1,65 +1,68 @@
-"""Behaviour spec for the reconciliation endpoint you're building.
+"""Behaviour spec for the payment webhook you're building.
 
-Contract (see README): POST /payment-events/{id}/apply with an X-Role header.
-- 403 if the role may not reconcile; 404 if the event doesn't exist.
-- On success the event becomes "applied", a repayment is recorded, the loan
-  balance drops, and the loan closes when fully repaid.
-- Applying an already-applied event is a no-op (idempotent).
-- A payment whose external_ref was already applied is a duplicate → "rejected".
-- A payment for a non-active loan → "rejected".
+Contract (see README): POST /webhooks/payments with an X-Webhook-Token header
+and a JSON body {external_ref, loan_id, amount, channel?}. A payment is
+reconciled ON RECEIPT — recorded and immediately applied or rejected.
+
+- 401 without a valid token.
+- On success: the event is "applied", a repayment is recorded, the loan
+  balance drops, and the loan closes when fully repaid. Return {event, loan}.
+- Reject (status "rejected" + reason, still 200) when it can't be applied: the
+  loan isn't active, the loan is unknown, a duplicate external_ref was already
+  applied (rails redeliver), or the amount overpays.
 
 These fail against the stub — make them pass, then add your own.
 """
 
-H = {"X-Role": "system"}
+TOK = {"X-Webhook-Token": "dev-webhook-secret"}
 
 
-def test_apply_reduces_outstanding_and_ticks_off(client):
-    r = client.post("/payment-events/1/apply", headers=H)
+def _pay(ref, loan_id, amount, channel="paystack"):
+    return {"external_ref": ref, "loan_id": loan_id, "amount": amount, "channel": channel}
+
+
+def test_webhook_applies_payment_and_reduces_outstanding(client):
+    r = client.post("/webhooks/payments", json=_pay("R-1", 1, 20000), headers=TOK)
     assert r.status_code == 200
     assert r.json()["event"]["status"] == "applied"
     assert client.get("/loans/1").json()["outstanding"] == 36000
 
 
-def test_apply_is_idempotent(client):
-    client.post("/payment-events/1/apply", headers=H)
-    client.post("/payment-events/1/apply", headers=H)  # retry / double-click
-    assert client.get("/loans/1").json()["outstanding"] == 36000  # not 16000
+def test_exact_payoff_closes_loan(client):
+    client.post("/webhooks/payments", json=_pay("R-2", 1, 56000), headers=TOK)
+    assert client.get("/loans/1").json()["status"] == "paid_off"
 
 
 def test_duplicate_external_ref_is_rejected(client):
-    client.post("/payment-events/1/apply", headers=H)       # ref R-1 applied
-    r = client.post("/payment-events/3/apply", headers=H)   # ref R-1 again (redelivery)
+    client.post("/webhooks/payments", json=_pay("R-1", 1, 20000), headers=TOK)
+    r = client.post("/webhooks/payments", json=_pay("R-1", 1, 20000), headers=TOK)  # redelivery
     assert r.json()["event"]["status"] == "rejected"
     assert client.get("/loans/1").json()["outstanding"] == 36000  # applied once only
 
 
 def test_payment_for_cancelled_loan_is_rejected(client):
-    r = client.post("/payment-events/2/apply", headers=H)   # loan 2 is cancelled
+    r = client.post("/webhooks/payments", json=_pay("R-3", 2, 100), headers=TOK)  # loan 2 cancelled
     assert r.json()["event"]["status"] == "rejected"
     assert client.get("/loans/2").json()["outstanding"] == 11000  # untouched
 
 
-def test_apply_requires_an_authorised_role(client):
-    r = client.post("/payment-events/1/apply", headers={"X-Role": "customer"})
-    assert r.status_code == 403
+def test_unknown_loan_is_rejected(client):
+    r = client.post("/webhooks/payments", json=_pay("R-4", 999, 100), headers=TOK)
+    assert r.json()["event"]["status"] == "rejected"
 
 
-def test_apply_unknown_event_returns_404(client):
-    assert client.post("/payment-events/999/apply", headers=H).status_code == 404
+def test_overpayment_is_rejected(client):
+    r = client.post("/webhooks/payments", json=_pay("R-5", 1, 999999), headers=TOK)
+    assert r.json()["event"]["status"] == "rejected"
+    assert client.get("/loans/1").json()["outstanding"] == 56000  # untouched
 
 
-# --- provided endpoints (these already pass) ---
-
-def test_feed_lists_pending_events(client):
-    events = client.get("/payment-events").json()
-    assert len(events) == 3
-    assert all(e["status"] == "pending" for e in events)
+def test_webhook_requires_a_valid_token(client):
+    r = client.post("/webhooks/payments", json=_pay("R-6", 1, 100))  # no token
+    assert r.status_code == 401
 
 
-def test_simulate_creates_a_pending_event(client):
-    before = len(client.get("/payment-events").json())
-    r = client.post("/simulate/payment")
-    assert r.status_code == 201
-    assert r.json()["status"] == "pending"
-    assert len(client.get("/payment-events").json()) == before + 1
+# --- provided endpoint (this already passes) ---
+
+def test_feed_endpoint_lists_events(client):
+    assert client.get("/payment-events").status_code == 200

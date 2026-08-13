@@ -1,20 +1,29 @@
 """Payment ingestion + reconciliation.
 
-Provided (working): list the payment feed, and *simulate* an incoming payment
-(a fake gateway callback that drops a new ``pending`` event).
+Provided (working): the payments feed (``GET /payment-events``).
 
->>> YOUR TASK is the reconciliation endpoint — see the stub at the bottom. <<<
+>>> YOUR TASK is the webhook that reconciles an incoming payment ON RECEIPT —
+    ``POST /webhooks/payments``. See the stub at the bottom and README.md. <<<
+
+The frontend's "Simulate incoming payment" button POSTs a synthetic payment to
+this webhook — exactly as a real gateway/rail would. There is no separate
+"apply" step: a payment arrives and is reconciled in the same call.
 """
 
-import random
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from .db import get_db
-from .models import Loan, LoanStatus, PaymentEvent, PaymentStatus
+from .models import PaymentEvent
 
 router = APIRouter()
+
+
+class PaymentIn(BaseModel):
+    external_ref: str
+    loan_id: int
+    amount: float
+    channel: str = "paystack"
 
 
 def _event_out(e: PaymentEvent) -> dict:
@@ -38,37 +47,9 @@ def list_payment_events(db=Depends(get_db)):
     return [_event_out(e) for e in events]
 
 
-@router.post("/simulate/payment", status_code=201)
-def simulate_payment(db=Depends(get_db)):
-    """Simulate an incoming payment from a rail — provided.
-
-    Drops a new ``pending`` PaymentEvent against a random active loan. Sometimes
-    the amount is the exact outstanding (an early settlement), so you'll see
-    payoffs too. This is the 'a payment just landed' half of the loop; applying
-    it is your job.
-    """
-    actives = db.query(Loan).filter(Loan.status == LoanStatus.active).all()
-    if not actives:
-        raise HTTPException(status_code=400, detail="no active loans to simulate against")
-    loan = random.choice(actives)
-    amount = round(random.choice([5000.0, 10000.0, 20000.0, loan.outstanding]), 2)
-    event = PaymentEvent(
-        external_ref=f"SIM-{uuid.uuid4().hex[:10].upper()}",
-        loan_id=loan.id,
-        amount=amount,
-        channel=random.choice(["paystack", "gsi", "cbs"]),
-        status=PaymentStatus.pending,
-    )
-    db.add(event)
-    db.commit()
-    db.refresh(event)
-    return _event_out(event)
-
-
-@router.post("/payment-events/{event_id}/apply", status_code=501)
-def apply_payment_event(event_id: int):
-    """TODO(candidate): reconcile ('tick off') a pending payment against its loan.
-
-    Remove this stub and implement it. See README.md for the full contract.
+@router.post("/webhooks/payments", status_code=501)
+def receive_payment(body: PaymentIn):
+    """TODO(candidate): a payment just arrived from a rail — reconcile it on
+    receipt. Remove this stub and implement it. See README.md for the contract.
     """
     raise HTTPException(status_code=501, detail="not implemented — this is your task")
