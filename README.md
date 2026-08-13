@@ -21,7 +21,7 @@ about the code that comes out. (See `NOTES.md`.)
 
 ## Run it locally
 
-Needs **Python 3.11+** and **Node 18+**.
+Needs **Python 3.11+** and **Node 20.19+**.
 
 ```bash
 ./run-local.sh          # seeds the DB, API on :8137, frontend on :5137 → open http://localhost:5137
