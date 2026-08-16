@@ -35,6 +35,21 @@ class PaymentStatus(str, enum.Enum):
     rejected = "rejected"  # could not be applied (bad loan state, duplicate, …)
 
 
+class RejectionReason(str, enum.Enum):
+    """Machine-stable classification of why a payment was rejected.
+
+    ``PaymentEvent.reason`` is the human-readable message (for the feed/audit
+    trail); this is what callers — e.g. the admin panel's issue filter chips
+    — should actually switch on, instead of pattern-matching the prose in
+    ``reason``, which can be reworded without warning.
+    """
+
+    unknown_loan = "unknown_loan"
+    closed_loan = "closed_loan"
+    duplicate = "duplicate"
+    overpayment = "overpayment"
+
+
 class Loan(Base):
     __tablename__ = "loans"
 
@@ -57,9 +72,20 @@ class PaymentEvent(Base):
     """An incoming payment from a rail (gateway/GSI/CBS). Starts ``pending``.
 
     ``external_ref`` is the rail's own id for the payment — the idempotency key.
-    It is intentionally NOT unique at the DB level: real rails redeliver, so the
-    same ``external_ref`` can arrive more than once, and de-duplicating is part
-    of the task.
+    It is NOT unique at the DB level, on purpose: real rails redeliver, so the
+    same ``external_ref`` can arrive more than once, and every delivery that
+    matches the webhook's expected shape is recorded as its own
+    ``PaymentEvent`` row — including ones that go on to be rejected. (A
+    request that *doesn't* match the shape at all — wrong types, missing
+    fields, a non-positive amount — fails request validation before it's ever
+    a candidate `PaymentIn`, the same as any REST endpoint; that's a 422, not
+    a recorded-and-rejected event, since it was never a valid payment
+    delivery to begin with.) Only one delivery may ever end up ``applied``
+    for a given ``external_ref`` — that's enforced in application code (see
+    ``payments._rejection_reason`` and the transaction-serialization note in
+    ``db.py``), not by a DB constraint, so a redelivery that arrives after
+    the original was applied is stored (for the audit trail) and rejected as
+    a duplicate, but never touches the loan.
     """
 
     __tablename__ = "payment_events"
@@ -70,7 +96,8 @@ class PaymentEvent(Base):
     amount = Column(Float, nullable=False)
     channel = Column(String, nullable=False, default="paystack")
     status = Column(Enum(PaymentStatus), nullable=False, default=PaymentStatus.pending)
-    reason = Column(String, nullable=True)  # why it was rejected, if it was
+    reason = Column(String, nullable=True)  # human-readable, why it was rejected
+    reason_code = Column(Enum(RejectionReason), nullable=True)  # machine-stable, same
     received_at = Column(DateTime, default=_utcnow)
     processed_at = Column(DateTime, nullable=True)
 

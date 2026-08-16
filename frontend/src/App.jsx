@@ -1,19 +1,33 @@
 import React, { useCallback, useEffect, useState } from "react";
 import "./styles.css";
+import Admin from "./Admin";
+import { ngn } from "./format";
 
-// This whole screen is PROVIDED. It fires synthetic payments at the webhook and
-// shows the feed + live loan balances. Your task is the backend webhook that
-// reconciles each payment on receipt — POST /webhooks/payments. Once you build
-// it, "Simulate incoming payment" will show payments getting applied/rejected
-// and the balances updating here. (The token below mirrors app/auth.py.)
+// Fires synthetic payments at the webhook (app/payments.py POST
+// /webhooks/payments) and shows the feed, live loan balances, and an admin
+// reconciliation view. (The secret below mirrors app/auth.py — see the note
+// on `sign` for why that's only OK in this demo.)
 
-const WEBHOOK_TOKEN = "dev-webhook-secret";
+const WEBHOOK_SIGNING_SECRET = "dev-webhook-secret";
 
-const ngn = new Intl.NumberFormat("en-NG", {
-  style: "currency",
-  currency: "NGN",
-  maximumFractionDigits: 2,
-});
+// Sign a raw JSON body the way a rail would: HMAC-SHA512 over the exact
+// bytes sent, hex-encoded (mirrors Paystack's x-paystack-signature scheme —
+// see app/auth.py). In a real system this runs on the *provider's* servers;
+// it only runs here because this button is standing in for the rail itself
+// in a demo. A browser must never hold a real webhook-signing secret.
+async function sign(rawBody) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(WEBHOOK_SIGNING_SECRET),
+    { name: "HMAC", hash: "SHA-512" },
+    false,
+    ["sign"]
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+  return Array.from(new Uint8Array(mac))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 const LOAN_LABEL = { active: "Active", paid_off: "Paid off", cancelled: "Cancelled", written_off: "Written off" };
 const PAY_LABEL = { pending: "Pending", applied: "Applied", rejected: "Rejected" };
@@ -24,6 +38,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState("feed");
 
   const load = useCallback(() => {
     setError(null);
@@ -42,14 +57,14 @@ export default function App() {
     setBusy(true);
     setNote(null);
     try {
+      const rawBody = JSON.stringify(payload);
+      const signature = await sign(rawBody);
       const r = await fetch("/webhooks/payments", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Webhook-Token": WEBHOOK_TOKEN },
-        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json", "X-Webhook-Signature": signature },
+        body: rawBody,
       });
-      if (r.status === 501) {
-        setNote("The payments webhook isn’t built yet — that’s your task (POST /webhooks/payments).");
-      } else if (!r.ok) {
+      if (!r.ok) {
         setNote(`Webhook returned ${r.status}.`);
       }
     } catch (e) {
@@ -97,110 +112,112 @@ export default function App() {
       )}
       {note && <div className="banner note">{note}</div>}
 
-      <div className="stats">
-        <div className="stat"><div className="k">Active loans</div><div className="v">{loans ? active.length : "—"}</div></div>
-        <div className="stat"><div className="k">Outstanding · active</div><div className="v">{loans ? ngn.format(outstanding) : "—"}</div></div>
-        <div className="stat"><div className="k">Payments received</div><div className="v">{events ? eventList.length : "—"}</div></div>
+      <div className="tabs">
+        <button className={`tab ${tab === "feed" ? "active" : ""}`} onClick={() => setTab("feed")}>
+          Feed
+        </button>
+        <button className={`tab ${tab === "admin" ? "active" : ""}`} onClick={() => setTab("admin")}>
+          Admin
+        </button>
       </div>
 
-      {/* Payments feed */}
-      <div className="card">
-        <div className="card-h">
-          <span>Payments feed</span>
-          <button className="btn btn-primary" onClick={simulate} disabled={busy || !loans}>
-            {busy ? "Sending…" : "Simulate incoming payment"}
-          </button>
-        </div>
-        <table className="feed">
-          <thead>
-            <tr>
-              <th>Reference</th>
-              <th>Loan</th>
-              <th className="num">Amount</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {events === null && !error &&
-              [0, 1, 2].map((i) => (
-                <tr key={i}><td colSpan="5"><div className="skeleton" /></td></tr>
-              ))}
+      {tab === "feed" && (
+        <>
+          <div className="stats">
+            <div className="stat"><div className="k">Active loans</div><div className="v">{loans ? active.length : "—"}</div></div>
+            <div className="stat"><div className="k">Outstanding · active</div><div className="v">{loans ? ngn.format(outstanding) : "—"}</div></div>
+            <div className="stat"><div className="k">Payments received</div><div className="v">{events ? eventList.length : "—"}</div></div>
+          </div>
 
-            {events &&
-              eventList.map((e) => (
-                <tr key={e.id}>
-                  <td className="ref">
-                    {e.external_ref}
-                    <div className="chan">{e.channel}</div>
-                  </td>
-                  <td>Loan #{e.loan_id}</td>
-                  <td className="num">{ngn.format(e.amount)}</td>
-                  <td>
-                    <span className={`pbadge ${e.status}`}>{PAY_LABEL[e.status] || e.status}</span>
-                    {e.reason ? <div className="chan">{e.reason}</div> : null}
-                  </td>
-                  <td className="num">
-                    <button className="btn" onClick={() => resend(e)} disabled={busy} title="Redeliver this payment">
-                      Resend ↻
-                    </button>
-                  </td>
+          {/* Payments feed */}
+          <div className="card">
+            <div className="card-h">
+              <span>Payments feed</span>
+              <button className="btn btn-primary" onClick={simulate} disabled={busy || !loans}>
+                {busy ? "Sending…" : "Simulate incoming payment"}
+              </button>
+            </div>
+            <table className="feed">
+              <thead>
+                <tr>
+                  <th>Reference</th>
+                  <th>Loan</th>
+                  <th className="num">Amount</th>
+                  <th>Status</th>
+                  <th></th>
                 </tr>
-              ))}
+              </thead>
+              <tbody>
+                {events === null && !error &&
+                  [0, 1, 2].map((i) => (
+                    <tr key={i}><td colSpan="5"><div className="skeleton" /></td></tr>
+                  ))}
 
-            {events && eventList.length === 0 && (
-              <tr><td colSpan="5" className="muted">No payments yet — hit “Simulate incoming payment”.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                {events &&
+                  eventList.map((e) => (
+                    <tr key={e.id}>
+                      <td className="ref">
+                        {e.external_ref}
+                        <div className="chan">{e.channel}</div>
+                      </td>
+                      <td>Loan #{e.loan_id}</td>
+                      <td className="num">{ngn.format(e.amount)}</td>
+                      <td>
+                        <span className={`pbadge ${e.status}`}>{PAY_LABEL[e.status] || e.status}</span>
+                        {e.reason ? <div className="chan">{e.reason}</div> : null}
+                      </td>
+                      <td className="num">
+                        <button className="btn" onClick={() => resend(e)} disabled={busy} title="Redeliver this payment">
+                          Resend ↻
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
 
-      {/* Loans */}
-      <div className="section-title">Loans</div>
-      <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>Borrower</th>
-              <th className="num">Principal</th>
-              <th className="num">Outstanding</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loans === null && !error &&
-              [0, 1, 2].map((i) => (
-                <tr key={i}><td colSpan="4"><div className="skeleton" /></td></tr>
-              ))}
+                {events && eventList.length === 0 && (
+                  <tr><td colSpan="5" className="muted">No payments yet — hit “Simulate incoming payment”.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
-            {loans &&
-              loanList.map((l) => (
-                <tr key={l.id}>
-                  <td>
-                    <div className="name">{l.borrower_name}</div>
-                    <div className="sub-id">Loan #{l.id}</div>
-                  </td>
-                  <td className="num">{ngn.format(l.principal)}</td>
-                  <td className="num">{ngn.format(l.outstanding)}</td>
-                  <td><span className={`badge ${l.status}`}>{LOAN_LABEL[l.status] || l.status}</span></td>
+          {/* Loans */}
+          <div className="section-title">Loans</div>
+          <div className="card">
+            <table>
+              <thead>
+                <tr>
+                  <th>Borrower</th>
+                  <th className="num">Principal</th>
+                  <th className="num">Outstanding</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {loans === null && !error &&
+                  [0, 1, 2].map((i) => (
+                    <tr key={i}><td colSpan="4"><div className="skeleton" /></td></tr>
+                  ))}
 
-      <div className="todo">
-        <h3>Your task</h3>
-        This screen is provided. <b>Core:</b> build{" "}
-        <code>POST /webhooks/payments</code> so an incoming payment is reconciled{" "}
-        <b>on receipt</b> — recorded, matched to its loan, applied (or rejected),
-        the loan closed when fully repaid, audited, in one transaction. Handle a
-        rail <b>redelivery</b> (the <b>Resend&nbsp;↻</b> button re-fires the same
-        reference — it must not apply twice), a payment for a closed loan, and
-        overpayment. <b>Extension:</b> build an <b>admin reconciliation &amp; issues
-        panel</b> that showcases what reconciled and the issues needing attention.
-        See <code>README.md</code>.
-      </div>
+                {loans &&
+                  loanList.map((l) => (
+                    <tr key={l.id}>
+                      <td>
+                        <div className="name">{l.borrower_name}</div>
+                        <div className="sub-id">Loan #{l.id}</div>
+                      </td>
+                      <td className="num">{ngn.format(l.principal)}</td>
+                      <td className="num">{ngn.format(l.outstanding)}</td>
+                      <td><span className={`badge ${l.status}`}>{LOAN_LABEL[l.status] || l.status}</span></td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {tab === "admin" && <Admin events={eventList} />}
     </div>
   );
 }

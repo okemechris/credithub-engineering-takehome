@@ -1,5 +1,7 @@
 .venv/
 takehome.db
+takehome.db-shm
+takehome.db-wal
 __pycache__/
 *.pyc
 .pytest_cache/
